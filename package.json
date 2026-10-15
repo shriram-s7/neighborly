@@ -10,7 +10,11 @@
     "seed": "pnpm --filter @neighborly/api seed",
     "test": "pnpm --filter @neighborly/api test",
     "db:push": "pnpm --filter @neighborly/api db:push",
-    "db:studio": "pnpm --filter @neighborly/api db:studio"
+    "db:studio": "pnpm --filter @neighborly/api db:studio",
+    "build:api": "pnpm --filter @neighborly/shared build && pnpm --filter @neighborly/api exec prisma generate && pnpm --filter @neighborly/api build",
+    "build:web": "pnpm --filter @neighborly/shared build && pnpm --filter @neighborly/web build",
+    "start:api": "node apps/api/dist/src/main.js",
+    "db:migrate:deploy": "pnpm --filter @neighborly/api exec prisma migrate deploy"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -24,5 +28,9 @@
   },
   "devDependencies": {
     "typescript": "^5.5.4"
+  },
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=20"
   }
 }

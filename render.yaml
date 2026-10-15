@@ -1,0 +1,27 @@
+# Render Blueprint — NestJS API (free web service). Database is hosted on Neon.
+services:
+  - type: web
+    name: neighborly-api
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm install -g pnpm@12.11.2 && pnpm install --frozen-lockfile --prod=false && pnpm build:api && pnpm db:migrate:deploy
+    startCommand: node apps/api/dist/src/main.js
+    healthCheckPath: /api/v1/categories
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DATABASE_URL
+        sync: false # Neon *direct* (non-pooled) connection string
+      - key: CORS_ORIGIN
+        sync: false # e.g. https://neighborly.vercel.app (comma-separated for several)
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d

@@ -6,7 +6,7 @@ import * as path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
-console.log('Seed DATABASE_URL:', process.env.DATABASE_URL);
+console.log('Seeding database host:', process.env.DATABASE_URL?.split('@')[1]?.split('/')[0] ?? '(unset)');
 const prisma = new PrismaClient();
 
 async function main() {

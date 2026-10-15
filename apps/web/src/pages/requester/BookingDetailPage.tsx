@@ -156,7 +156,8 @@ export const BookingDetailPage: React.FC = () => {
   useEffect(() => {
     if (!booking?.conversation?.id) return;
 
-    const socket = io('/', { path: '/socket.io' });
+    // VITE_SOCKET_URL is the API origin in production; locally Vite proxies /socket.io.
+    const socket = io(import.meta.env.VITE_SOCKET_URL || '/', { path: '/socket.io' });
     socketRef.current = socket;
 
     socket.emit('join_conversation', { conversationId: booking.conversation.id });
