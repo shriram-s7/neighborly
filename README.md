@@ -1,233 +1,282 @@
-# 🏘️ Neighborly — Hyperlocal Community Services Platform
+# 🏘️ Neighborly
 
-**Neighborly** is a full-stack hyperlocal community platform built for Chennai neighborhoods (**Ramapuram, Porur, Valasaravakkam, KK Nagar**). Residents discover, book, trade, and pay for everyday community services — repairs, tutoring, cooking, tailoring, tech help, pet care — from verified neighbors. Every booking runs through an explicit state machine with double-entry wallet escrow, explainable 6-factor provider matching, Bayesian trust scores, rule-based fraud detection, real-time masked chat, skill bartering, and an admin console for disputes and community analytics.
+**A hyperlocal community services platform for Chennai neighbourhoods.** Residents describe what they need in plain words, get matched with nearby neighbours who can help, pay safely through escrow, chat in real time, and leave reviews that feed an explainable trust score. Admins resolve disputes, moderate suspicious reviews and see which services each neighbourhood is missing.
+
+### 🌐 [Live demo → neighborly-beige.vercel.app](https://neighborly-beige.vercel.app)  ·  [API docs (Swagger)](https://neighborly-api-33ge.onrender.com/api/docs)
+
+| Role | Email | Password |
+|---|---|---|
+| Requester (resident) | `requester@demo.in` | `Demo@123` |
+| Provider | `provider@demo.in` | `Demo@123` |
+| Admin | `admin@demo.in` | `Demo@123` |
+
+> ⏱️ The API runs on Render's free tier and **sleeps after ~15 minutes of inactivity**. If the site seems stuck, open [the API wake-up link](https://neighborly-api-33ge.onrender.com/api/v1/categories) and wait up to a minute for the JSON to appear, then reload the site.
 
 ---
 
-## 🌐 Live Demo
+## Contents
 
-- **Web app:** https://neighborly-beige.vercel.app
-- **API docs (Swagger):** https://neighborly-api-33ge.onrender.com/api/docs
-- Demo logins are listed below (password `Demo@123`).
-
-> The API runs on Render's free tier and sleeps after ~15 minutes without traffic. Open
-> https://neighborly-api-33ge.onrender.com/api/v1/categories and wait for the JSON (up to ~1 minute) to wake it.
+- [What it does](#what-it-does)
+- [Screenshots](#screenshots)
+- [How it works](#how-it-works)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Run it locally](#run-it-locally)
+- [Tests](#tests)
+- [Deployment](#deployment)
+- [Project structure](#project-structure)
+- [Known limitations](#known-limitations)
 
 ---
 
-## 🧰 Tech Stack
+## What it does
+
+**Residents (requesters)**
+- Type a need like *"fix my ceiling fan urgently tomorrow evening, budget 500"* — it is parsed into category, urgency, budget and a time window.
+- See nearby providers ranked by a 0–100 score, with a **"Why this match?"** breakdown of all six factors.
+- Book with **wallet escrow**: money is held until the job is done, then released to the provider (minus a 5% fee).
+- Chat live with the provider; phone numbers and emails are masked until the provider accepts.
+- Raise a dispute if something goes wrong, and leave a review afterwards.
+- Offer free help for **community credits**, or swap skills on the **barter board**.
+
+**Providers**
+- Switch the same account into provider mode, create listings (fixed, hourly or free) and set weekly availability.
+- Move jobs through the lifecycle: accept → schedule → start → complete.
+- Build a **trust score** from verification, ratings, completion, punctuality, tenure and review authenticity.
+
+**Admins**
+- Resolve disputes with a full refund, full release, or a custom percentage split.
+- Moderate reviews flagged by the fraud rules, and verify providers.
+- View the **Community Health Index** and **service-gap analysis** per neighbourhood.
+- Verify the ledger: total balances + escrow + fees must equal total top-ups.
+
+---
+
+## Screenshots
+
+| Smart request & “Why this match?” | Booking timeline |
+|---|---|
+| ![Smart match](docs/screenshots/smart-match.png) | ![Booking timeline](docs/screenshots/booking-timeline.png) |
+| **Live chat & booking audit trail** | **Wallet & escrow ledger** |
+| ![Booking chat](docs/screenshots/booking-chat.png) | ![Wallet](docs/screenshots/wallet.png) |
+| **Provider dashboard & trust score** | **Community health analytics** |
+| ![Provider dashboard](docs/screenshots/provider-dashboard.png) | ![Admin health](docs/screenshots/admin-health.png) |
+| **Admin dispute console** | **Review moderation queue** |
+| ![Admin disputes](docs/screenshots/admin-disputes.png) | ![Admin moderation](docs/screenshots/admin-moderation.png) |
+
+---
+
+## How it works
+
+All scoring is **rule-based and explainable** — every number shown in the UI can be traced to the code below.
+
+### 1. Request parser — `matching.service.ts`
+- **Category:** 3 points if the category name/slug appears, +1 per matching keyword; highest wins.
+- **Urgency:** words like *urgent, asap, now, today* → `URGENT`; *flexible, next week* → `LOW`.
+- **Budget:** 2–6 digits next to `₹`, `rs`, `inr` or `budget`, stored in paise.
+- **Time window** (`time-window.ts`, Indian Standard Time): *morning* 08:00–12:00, *afternoon* 12:00–17:00, *evening* 17:00–21:00, combined with *today* / *tomorrow*.
+
+### 2. Matching — `findMatches`
+Only active listings in the category are considered, and **a provider is excluded if the requester is farther away than the provider's service radius** (default 5 km). Each remaining listing gets six factor values (0–1), each multiplied by its weight × 100:
+
+| Factor | Normal | Urgent | Value |
+|---|:---:|:---:|---|
+| Skill fit | 30% | 20% | 1.0 for the requested category |
+| Distance | 20% | **35%** | 1.0 within 1 km, then `1 − (d − 0.5) / 8.5` (haversine distance) |
+| Availability | 15% | 20% | 0.95 if the provider has weekly slots, else 0.6 |
+| Rating / trust | 15% | 10% | trust score ÷ 100 (min 0.2) |
+| Price fit | 10% | 5% | 1.0 within budget, else `1 − excess / budget` (min 0.1) |
+| Reliability | 10% | 10% | `0.6 × completion rate + 0.4 × on-time rate` |
+
+### 3. Trust score (0–100) — `reviews.service.ts`
+
+| Factor | Max points |
+|---|:---:|
+| Verification (none / phone / ID / address → 0 / 5 / 15 / 20) | 20 |
+| Bayesian rating `(3 × 4.0 + Σ ratings) / (3 + n)`, flagged reviews excluded | 25 |
+| Completion rate | 20 |
+| On-time rate | 15 |
+| Volume & tenure `min(10, 1.5 × completed jobs + 0.5 × months)` | 10 |
+| Review authenticity (share of unflagged reviews) | 10 |
+| **Penalties:** −10 per dispute, −5 per cancellation; total clamped to 0–100 | |
+
+Tiers: **Trusted** ≥ 50, **Highly Trusted** ≥ 70, **Pillar of the Community** ≥ 85.
+
+### 4. Booking lifecycle & escrow — `booking.state-machine.ts`, `wallet.service.ts`
+
+```
+REQUESTED ─► ACCEPTED ─► SCHEDULED ─► IN_PROGRESS ─► COMPLETED ─► PAID ─► REVIEWED
+    │            │            │                          │
+    ├─► DECLINED └────────────┴─► CANCELLED              └─► DISPUTED ─► REFUNDED / PAID (admin)
+    └─► CANCELLED                (full refund)                (escrow frozen)
+```
+
+- 12 allowed transitions, each limited to specific roles; anything else is rejected before touching the database.
+- **REQUESTED** holds the price in escrow · **DECLINED/CANCELLED** refunds it · **COMPLETED** starts a 48-hour auto-release · **PAID** sends 95% to the provider and records a 5% platform fee.
+- A cron job runs every 5 minutes to auto-release due payments; admins can fast-forward for demos.
+- All amounts are integer **paise**, every money movement runs in a database transaction and is written to the ledger, and `GET /api/v1/wallet/verify` checks that `balances + held + fees = top-ups`.
+
+### 5. Fraud signals on reviews
+A review is flagged for moderation if it is a **5★ within 2 minutes of completion**, a **very short comment (< 8 characters) with a 1★ or 5★ rating**, or a **reciprocal review between the same two people within 48 hours**.
+
+### 6. Community analytics — `analytics.service.ts`
+- **Health index (0–100)** = residents (20) + fulfilment rate (25) + repeat bookings (15) + low disputes (15) + average trust (15) + free-help/barter activity (10).
+- **Service gaps:** for each neighbourhood × category, `gap = max(0, demand − 2 × supply)`, where demand is bookings + requests by local residents and supply is local active listings.
+
+---
+
+## Tech stack
 
 | Layer | Technology |
 |---|---|
-| **Monorepo** | pnpm workspaces (`apps/api`, `apps/web`, `packages/shared`), TypeScript 5 |
-| **Backend** | NestJS 10, Prisma 5 ORM, PostgreSQL 16, Passport JWT (access + refresh), bcrypt, class-validator, Socket.IO, `@nestjs/schedule`, Swagger/OpenAPI |
-| **Frontend** | React 18, Vite, React Router, TanStack Query, Tailwind CSS, Leaflet / OpenStreetMap, Recharts, socket.io-client |
-| **Testing** | Jest + ts-jest |
-| **Infra (local)** | PostgreSQL via Docker Compose (optional) |
+| Monorepo | pnpm workspaces, TypeScript 5 |
+| Frontend | React 18, Vite, React Router 6, Tailwind CSS, Leaflet + OpenStreetMap, Recharts, Lucide icons, socket.io-client |
+| Backend | NestJS 10, Prisma 5, PostgreSQL 16, Passport JWT (15-min access + 7-day refresh tokens), bcrypt, Socket.IO, `@nestjs/schedule`, Swagger |
+| Shared | `packages/shared` — enums, types, Zod schemas, haversine helper |
+| Testing | Jest + ts-jest |
+| Hosting | Vercel (web) · Render (API) · Neon (PostgreSQL) |
 
 ---
 
-## 🚀 Local Setup
+## Architecture
 
-### 1. Prerequisites
-- Node.js v20+
-- pnpm (`npm i -g pnpm`)
-- PostgreSQL 16 on `localhost:5432` — either your own install, or via Docker:
-  ```bash
-  docker compose up -d
-  ```
+```mermaid
+graph LR
+    subgraph Web["React SPA (Vercel)"]
+        UI[Requester · Provider · Admin pages]
+        API_CLIENT[Fetch client<br/>VITE_API_URL]
+        SOCK[socket.io-client<br/>VITE_SOCKET_URL]
+    end
+    subgraph Server["NestJS API (Render)"]
+        REST["REST /api/v1<br/>JWT + role guards"]
+        GW[Socket.IO chat gateway]
+        CRON[Auto-release cron<br/>every 5 min]
+        MODS[Modules: auth · users · listings · availability ·<br/>matching · bookings · wallet · reviews ·<br/>disputes · exchanges · chat · notifications · analytics]
+    end
+    DB[(PostgreSQL<br/>Neon · Prisma)]
+    API_CLIENT -->|HTTPS| REST
+    SOCK -->|WebSocket| GW
+    REST --> MODS
+    GW --> MODS
+    CRON --> MODS
+    MODS --> DB
+```
 
-### 2. Install dependencies
+---
+
+## Run it locally
+
+**Prerequisites:** Node.js 20+, pnpm (`npm i -g pnpm`), and PostgreSQL 16 on `localhost:5432` (or run `docker compose up -d`).
+
 ```bash
+# 1. Install
+git clone https://github.com/shriram-s7/neighborly.git
+cd neighborly
 pnpm install
-```
 
-### 3. Configure environment
-```bash
+# 2. Configure (then set DATABASE_URL and the two JWT secrets in apps/api/.env)
 cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env   # optional, no variables required for local dev
-```
-Edit `apps/api/.env` and set `DATABASE_URL` and the two JWT secrets (generate with `openssl rand -hex 32`). The API refuses to sign tokens without them.
 
-### 4. Create the database schema
-```bash
+# 3. Create the schema and load demo data
+pnpm --filter @neighborly/shared build
 pnpm --filter @neighborly/api exec prisma migrate deploy
-```
-If your local database was created earlier with `pnpm db:push`, mark the initial migration as applied instead:
-`pnpm --filter @neighborly/api exec prisma migrate resolve --applied 20261016000000_init`
-
-### 5. Seed demo data
-```bash
 pnpm seed
-```
-Optionally load the expanded dataset (20 providers, disputes, a flagged review):
-```bash
-pnpm --filter @neighborly/api seed:expanded
-```
+pnpm --filter @neighborly/api seed:expanded   # 20 extra users + a demo dispute
 
-### 6. Run the app
-```bash
+# 4. Start API (:4000) and web (:5173) together
 pnpm dev
 ```
-This starts the API and web app in parallel:
-- **Web app:** http://localhost:5173
-- **API:** http://localhost:4000/api/v1
-- **Swagger docs:** http://localhost:4000/api/docs
+
+| | URL |
+|---|---|
+| Web app | http://localhost:5173 |
+| API | http://localhost:4000/api/v1 |
+| Swagger docs | http://localhost:4000/api/docs |
+
+Locally, Vite proxies `/api` and `/socket.io` to port 4000, so the web app needs no environment variables.
+
+> If your database was created earlier with `pnpm db:push`, mark the migration as applied instead of step 3's `migrate deploy`:
+> `pnpm --filter @neighborly/api exec prisma migrate resolve --applied 20261016000000_init`
 
 ---
 
-## 👥 Demo Accounts
-
-All accounts share the password **`Demo@123`**.
-
-| Role | Email | Name | Neighborhood |
-|---|---|---|---|
-| **Requester (Resident)** | `requester@demo.in` | Priya Sundaram | Ramapuram |
-| **Provider** | `provider@demo.in` | Karthik Raja | Ramapuram |
-| **Admin** | `admin@demo.in` | Administrator | Chennai Metro |
-
----
-
-## ☁️ Deployment
-
-| Piece | Host | Config |
-|---|---|---|
-| Web (React/Vite) | Vercel | `vercel.json` (repo root) — builds `apps/web`, SPA rewrite to `index.html` |
-| API (NestJS) | Render free web service | `render.yaml` Blueprint — builds shared + API, runs `prisma migrate deploy`, starts `node apps/api/dist/src/main.js` |
-| Database | Neon PostgreSQL | use the **direct** (non-pooled) connection string as `DATABASE_URL` |
-
-Environment variables:
-- **Render (API):** `DATABASE_URL`, `CORS_ORIGIN` (the Vercel URL), `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` (auto-generated by the Blueprint), `JWT_ACCESS_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`. `PORT` is provided by Render.
-- **Vercel (web):** `VITE_API_URL` and `VITE_SOCKET_URL`, both set to the Render API origin (e.g. `https://neighborly-api.onrender.com`).
-
-Seed the hosted database once from your machine:
-```bash
-DATABASE_URL="<neon direct url>" pnpm seed
-DATABASE_URL="<neon direct url>" pnpm --filter @neighborly/api seed:expanded
-```
-
-> The Render free tier sleeps after ~15 minutes idle; the first request after that takes up to a minute.
-
----
-
-## 🧪 Tests
+## Tests
 
 ```bash
 pnpm test
 ```
 
-Runs the API's Jest suite, covering:
-- `booking.state-machine.spec.ts` — state transitions & actor permissions
-- `wallet.ledger.spec.ts` — double-entry invariant on top-up, hold, fee, and dispute split
-- `matching.engine.spec.ts` — Haversine distance and urgent-mode weight reallocation
-- `trust.score.spec.ts` — Bayesian prior convergence and penalties
+**6 suites, 19 tests**, including:
+
+| Suite | Covers |
+|---|---|
+| `booking.state-machine.spec.ts` | Legal/illegal transitions and which roles may make them |
+| `matching.service.spec.ts` | Parser time windows ("tomorrow evening" → 17:00–21:00 IST) and the service-radius filter |
+| `roles.guard.spec.ts` | Admin-only routes allow admins, reject users, and the roles guard is not global |
+| `matching.engine.spec.ts` | Haversine distance and urgent vs normal weights |
+| `trust.score.spec.ts` | Bayesian rating behaviour and penalty clamping |
+| `wallet.ledger.spec.ts` | Ledger invariant across hold, release, fee and dispute split |
 
 ---
 
-## 🏛️ System Architecture
+## Deployment
 
-```mermaid
-graph TD
-    subgraph Frontend ["React 18 + Vite (Tailwind / Vanilla CSS)"]
-        UI_REQ["Resident Portal (Discover, Smart NLP, Wallet)"]
-        UI_PROV["Provider Studio (Listings, Slots, Jobs)"]
-        UI_ADMIN["Admin Governance (Disputes, Fraud, Analytics)"]
-        UI_MAP["Leaflet OSM Geospatial Pin Engine"]
-        UI_CHAT["Socket.IO Live Realtime Chat"]
-    end
+| Piece | Host | Config |
+|---|---|---|
+| Web | Vercel | [`vercel.json`](vercel.json) — builds `apps/web`, rewrites all routes to `index.html` |
+| API | Render (free) | [`render.yaml`](render.yaml) Blueprint — builds shared + API, runs `prisma migrate deploy`, starts `node apps/api/dist/src/main.js` |
+| Database | Neon | PostgreSQL; use the **direct** (non-pooled) connection string |
 
-    subgraph Backend ["NestJS Modular API Engine (Port 4000)"]
-        AUTH["Auth & RBAC Guards (JWT + Roles)"]
-        MATCH["6-Factor Matching Engine & NLP Parser"]
-        STATE["Pure Booking State Machine"]
-        ESCROW["Double-Entry Escrow & Ledger Service"]
-        SAFETY["Fraud & Fake Review Detector"]
-        HEALTH["Community Health & Service Gap Analytics"]
-        GATEWAY["Socket.IO Gateway (Phone/Email Masking)"]
-    end
+**Environment variables**
 
-    subgraph Database ["PostgreSQL 16 (WSL2 / Docker)"]
-        PRISMA["Prisma ORM (18 Models)"]
-        DB_USERS[("Users & Providers")]
-        DB_BOOKINGS[("Bookings & Audit Events")]
-        DB_LEDGER[("Wallets & Ledger Entries")]
-        DB_EXCHANGES[("Skill Exchanges & Conversations")]
-    end
+| Where | Variable | Value |
+|---|---|---|
+| Render | `DATABASE_URL` | Neon direct connection string |
+| Render | `CORS_ORIGIN` | the Vercel URL (comma-separate several) |
+| Render | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | generated by the Blueprint |
+| Vercel | `VITE_API_URL`, `VITE_SOCKET_URL` | the Render API origin, e.g. `https://neighborly-api-33ge.onrender.com` |
 
-    Frontend --> Backend
-    Backend --> PRISMA
-    PRISMA --> Database
+Seed a fresh hosted database once from your machine:
+
+```bash
+DATABASE_URL="<neon direct url>" pnpm seed
+DATABASE_URL="<neon direct url>" pnpm --filter @neighborly/api seed:expanded
 ```
 
 ---
 
-## 🧮 Mathematical Formulas & Technical Specifications
-
-### 1. Pure Booking State Machine
-Explicit state transition table enforcing legal actor roles and atomic database side effects:
-$$\text{REQUESTED} \longrightarrow \text{ACCEPTED} \longrightarrow \text{SCHEDULED} \longrightarrow \text{IN\_PROGRESS} \longrightarrow \text{COMPLETED} \longrightarrow \text{PAID} \longrightarrow \text{REVIEWED}$$
-- **Side Effects:**
-  - `REQUESTED`: Escrow held in resident wallet.
-  - `DECLINED / CANCELLED`: 100% immediate escrow refund to resident.
-  - `COMPLETED`: Starts 48-hour auto-release countdown.
-  - `PAID`: 95% payout to provider, 5% platform fee recorded.
-  - `DISPUTED`: Escrow frozen pending admin mediation (100% Refund, 100% Release, or Custom Split).
-
-### 2. Double-Entry Escrow Ledger Invariant
-At all times across all financial operations:
-$$\Delta = \text{totalBalances} + \text{totalHeld} + \text{totalPlatformFees} - \text{totalTopups} \equiv 0$$
-Verified via `GET /api/v1/wallet/verify`.
-
-### 3. Explainable 6-Factor Bayesian Trust Score (0 – 100)
-1. **Verification Points (Max 20):** `NONE` = 0, `PHONE` = 5, `ID` = 15, `ADDRESS` = 20.
-2. **Bayesian Rating (Max 25):**
-   $$R_{\text{bayesian}} = \frac{C \cdot m + \sum_{i=1}^n r_i}{C + n} \quad (C=3.0, \, m=4.0)$$
-   $$\text{Points} = \frac{R_{\text{bayesian}}}{5.0} \times 25$$
-3. **Completion Rate (Max 20):** $(\text{completedJobs} / \text{acceptedJobs}) \times 20$.
-4. **On-Time & Reliability (Max 15):** $\text{onTimeRate} \times 15$.
-5. **Volume & Community Tenure (Max 10):** $\min(10, \text{completedJobs} \times 1.5 + \text{monthsTenure} \times 0.5)$.
-6. **Review Authenticity (Max 10):** Proportion of unflagged reviews $\times 10$.
-- **Penalties:** $-10$ per active/upheld dispute, $-5$ per provider cancellation.
-
-### 4. 6-Factor Explainable Matching Engine
-$$\text{Composite Score} = \sum_{j=1}^6 w_j \cdot f_j \cdot 100$$
-| Factor | Standard Weight | Urgent Mode Weight | Description |
-|---|:---:|:---:|---|
-| **Distance Proximity** | 20% | **35%** | Haversine formula decay curve $e^{-d/3}$ |
-| **Skill & Category Fit** | **30%** | 20% | Exact category specialization & keyword match |
-| **Availability Fit** | 15% | **20%** | Configured weekly slots & immediate response |
-| **Bayesian Trust** | 15% | 10% | Provider trust score / 100 |
-| **Reliability** | 10% | 10% | $(0.6 \times \text{completion} + 0.4 \times \text{on-time})$ |
-| **Price Fit** | 10% | 5% | Within resident max budget |
-
-### 5. Community Health Index (0 – 100)
-$$\text{Health} = 0.20 \times \text{Residents} + 0.25 \times \text{Fulfilment} + 0.15 \times \text{RepeatBookings} + 0.15 \times \text{LowDisputes} + 0.15 \times \text{AvgTrust} + 0.10 \times \text{CashlessActivity}$$
-
----
-
-
-## 📂 Project Structure
+## Project structure
 
 ```
 neighborly/
 ├── apps/
-│   ├── api/                     # NestJS backend service
-│   │   ├── prisma/              # Schema & seed scripts
-│   │   └── src/modules/
-│   │       ├── auth/            # JWT authentication & guards
-│   │       ├── bookings/        # State-machine & lifecycle
-│   │       ├── wallet/          # Double-entry escrow ledger
-│   │       ├── chat/            # Socket.IO & masking gateway
-│   │       ├── reviews/         # Bayesian trust & fraud detector
-│   │       ├── disputes/        # Dispute resolution & split engine
-│   │       ├── exchanges/       # Skill barter & community credits
-│   │       ├── matching/        # NLP parser & 6-factor algorithm
-│   │       └── analytics/       # Community health & gap heatmap
-│   └── web/                     # React 18 + Vite frontend
-│       └── src/
-│           ├── components/      # UI components, maps, layout
-│           ├── pages/           # Requester, Provider, Admin, Public
-│           └── lib/             # API client, INR formatting
-└── packages/
-    └── shared/                  # Common TypeScript interfaces & enums
+│   ├── api/                      # NestJS server
+│   │   ├── prisma/               # schema.prisma, migrations/, seed scripts
+│   │   └── src/
+│   │       ├── common/           # guards, decorators, CORS, exception filter
+│   │       ├── prisma/           # PrismaService
+│   │       └── modules/          # analytics, auth, availability, bookings, categories,
+│   │                             # chat, disputes, exchanges, listings, matching,
+│   │                             # neighborhoods, notifications, providers, reviews,
+│   │                             # users, wallet
+│   └── web/                      # React 18 + Vite client
+│       └── src/                  # components/, context/, lib/ (API client), pages/
+├── packages/shared/              # enums, types, Zod schemas, haversine
+├── docs/screenshots/             # images used in this README
+├── docker-compose.yml            # local PostgreSQL 16
+├── render.yaml                   # Render Blueprint (API)
+└── vercel.json                   # Vercel config (web)
 ```
+
+---
+
+## Known limitations
+
+Being upfront about what this version does **not** do:
+
+- **Payments are simulated** — the wallet uses demo top-ups; there is no real payment gateway or KYC.
+- **Scores are rule-based** — weights were chosen by reasoning, not learned from data. Distance is straight-line, not road distance.
+- **Socket.IO is not authenticated yet** — the chat gateway checks the browser origin but not the JWT.
+- **Request bodies are typed but not validated at runtime** — the shared Zod schemas are not yet wired into the API.
+- **Some demo analytics are seeded** — Porur pet-care demand is raised to at least 14 to showcase the service-gap view, and "median time to accept" is a fixed 18 minutes.
+- **Free hosting sleeps** — the first request after ~15 idle minutes takes up to a minute, and the auto-release cron only runs while the API is awake.
