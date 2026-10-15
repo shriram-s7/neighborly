@@ -6,10 +6,12 @@
 
 ## 🌐 Live Demo
 
-> _Coming soon._
->
-> - Web app: `TBD`
-> - API / Swagger docs: `TBD`
+- **Web app:** https://neighborly-beige.vercel.app
+- **API docs (Swagger):** https://neighborly-api-33ge.onrender.com/api/docs
+- Demo logins are listed below (password `Demo@123`).
+
+> The API runs on Render's free tier and sleeps after ~15 minutes without traffic. Open
+> https://neighborly-api-33ge.onrender.com/api/v1/categories and wait for the JSON (up to ~1 minute) to wake it.
 
 ---
 
