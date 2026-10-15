@@ -1,6 +1,8 @@
 import { UserSummary } from '@neighborly/shared';
 
-const API_BASE = '/api/v1';
+// In production VITE_API_URL points at the API origin; locally it is unset and Vite proxies /api.
+const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const API_BASE = `${API_ORIGIN}/api/v1`;
 
 export interface ApiResponse<T = any> {
   data?: T;
