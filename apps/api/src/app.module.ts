@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -18,7 +17,6 @@ import { DisputesModule } from './modules/disputes/disputes.module';
 import { ExchangesModule } from './modules/exchanges/exchanges.module';
 import { MatchingModule } from './modules/matching/matching.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
-import { RolesGuard } from './common/guards/roles.guard';
 
 @Module({
   imports: [
@@ -41,12 +39,10 @@ import { RolesGuard } from './common/guards/roles.guard';
     MatchingModule,
     AnalyticsModule,
   ],
+  // RolesGuard is applied per route with @UseGuards(...RolesGuard) after JwtAuthGuard.
+  // Registering it globally (APP_GUARD) made it run before authentication, so
+  // req.user was empty and every @Roles(ADMIN) route returned 403.
   controllers: [],
-  providers: [
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
-    },
-  ],
+  providers: [],
 })
 export class AppModule {}

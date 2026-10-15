@@ -8,6 +8,7 @@ import {
   PriceEstimateResult,
   haversineDistanceKm,
 } from '@neighborly/shared';
+import { resolveTimeWindow } from './time-window';
 
 @Injectable()
 export class MatchingService {
@@ -95,7 +96,15 @@ export class MatchingService {
     let preferredTime: string | null = null;
     let timeChip: string | undefined = undefined;
 
-    if (textLower.includes('today')) {
+    let preferredTimeEnd: string | null = null;
+    const window = resolveTimeWindow(rawText);
+
+    if (window) {
+      // "tomorrow evening" -> 17:00–21:00 IST tomorrow, etc.
+      timeChip = window.label;
+      preferredTime = window.start.toISOString();
+      preferredTimeEnd = window.end.toISOString();
+    } else if (textLower.includes('today')) {
       timeChip = 'Today';
       preferredTime = new Date().toISOString();
     } else if (textLower.includes('tomorrow')) {
@@ -120,6 +129,7 @@ export class MatchingService {
       urgency,
       budgetMax,
       preferredTime,
+      preferredTimeEnd,
       confidence: Math.min(1.0, confidence),
       matchedKeywords,
       parsedChips: {
@@ -211,6 +221,10 @@ export class MatchingService {
       const pLat = provider.lat ?? 13.0382;
       const pLng = provider.lng ?? 80.1565;
       const distanceKm = haversineDistanceKm(userLat, userLng, pLat, pLng);
+
+      // Exclude providers who do not serve this location (same 5 km default as listings)
+      const serviceRadiusKm = profile?.serviceRadiusKm ?? 5.0;
+      if (distanceKm > serviceRadiusKm) continue;
 
       // Decay curve: 1.0 if <= 1km, linear decay down to 0 at 10km
       let distanceRaw = Math.max(0, 1 - (distanceKm - 0.5) / 8.5);
