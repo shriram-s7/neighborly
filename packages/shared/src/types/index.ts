@@ -57,6 +57,8 @@ export interface ParsedRequestResult {
   urgency: RequestUrgency;
   budgetMax?: number | null;
   preferredTime?: string | null;
+  /** End of the preferred window when a part of day was given (e.g. evening = 17:00–21:00 IST) */
+  preferredTimeEnd?: string | null;
   confidence: number;
   matchedKeywords: string[];
   parsedChips: {
