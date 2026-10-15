@@ -4,7 +4,7 @@ services:
     name: neighborly-api
     runtime: node
     plan: free
-    region: singapore
+    region: ohio # same region as the Neon database (aws us-east-2)
     branch: main
     buildCommand: npm install -g pnpm@12.11.2 && pnpm install --frozen-lockfile --prod=false && pnpm build:api && pnpm db:migrate:deploy
     startCommand: node apps/api/dist/src/main.js
