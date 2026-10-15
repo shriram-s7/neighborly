@@ -1,0 +1,28 @@
+{
+  "name": "neighborly-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter @neighborly/api dev",
+    "dev:web": "pnpm --filter @neighborly/web dev",
+    "dev": "pnpm --parallel --filter @neighborly/api --filter @neighborly/web dev",
+    "build": "pnpm --recursive build",
+    "seed": "pnpm --filter @neighborly/api seed",
+    "test": "pnpm --filter @neighborly/api test",
+    "db:push": "pnpm --filter @neighborly/api db:push",
+    "db:studio": "pnpm --filter @neighborly/api db:studio"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "bcrypt",
+      "esbuild",
+      "prisma"
+    ]
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

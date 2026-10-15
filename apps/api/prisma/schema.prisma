@@ -1,0 +1,470 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ---------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum VerificationLevel {
+  NONE
+  PHONE
+  ID
+  ADDRESS
+}
+
+enum PricingType {
+  FIXED
+  HOURLY
+  FREE
+}
+
+enum RequestUrgency {
+  LOW
+  NORMAL
+  URGENT
+}
+
+enum RequestType {
+  PAID
+  FREE_HELP
+  BARTER
+}
+
+enum RequestStatus {
+  OPEN
+  MATCHED
+  CLOSED
+  EXPIRED
+}
+
+enum BookingPaymentMode {
+  WALLET
+  CREDITS
+  FREE
+}
+
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  PAID
+  REVIEWED
+  DECLINED
+  CANCELLED
+  DISPUTED
+  REFUNDED
+}
+
+enum LedgerEntryType {
+  TOPUP
+  ESCROW_HOLD
+  ESCROW_RELEASE
+  REFUND
+  PLATFORM_FEE
+  CREDIT_EARN
+  CREDIT_SPEND
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED
+}
+
+enum DisputeResolution {
+  REFUND
+  RELEASE
+  SPLIT
+}
+
+enum SkillExchangeStatus {
+  PROPOSED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+  CANCELLED
+}
+
+// ---------------------------------------------------------
+// MODELS
+// ---------------------------------------------------------
+
+model Neighborhood {
+  id        String   @id @default(cuid())
+  name      String
+  city      String   @default("Chennai")
+  centerLat Float
+  centerLng Float
+  radiusKm  Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  requests ServiceRequest[]
+
+  @@index([city])
+}
+
+model User {
+  id                String            @id @default(cuid())
+  name              String
+  email             String            @unique
+  phone             String?
+  passwordHash      String
+  role              Role              @default(USER)
+  isProvider        Boolean           @default(false)
+  neighborhoodId    String?
+  lat               Float?
+  lng               Float?
+  avatarUrl         String?
+  bio               String?
+  verificationLevel VerificationLevel @default(NONE)
+  joinedAt          DateTime          @default(now())
+  isSuspended       Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  neighborhood      Neighborhood?     @relation(fields: [neighborhoodId], references: [id])
+  providerProfile   ProviderProfile?
+  wallet            Wallet?
+  listings          ServiceListing[]
+  availabilitySlots AvailabilitySlot[]
+
+  serviceRequests   ServiceRequest[]  @relation("RequesterRequests")
+  requestedBookings Booking[]         @relation("RequesterBookings")
+  providedBookings  Booking[]         @relation("ProviderBookings")
+  
+  reviewsGiven      Review[]          @relation("ReviewsGiven")
+  reviewsReceived   Review[]          @relation("ReviewsReceived")
+  disputesRaised    Dispute[]         @relation("DisputesRaised")
+  disputesResolved  Dispute[]         @relation("DisputesResolved")
+  
+  messagesSent      Message[]
+  proposedExchanges SkillExchange[]   @relation("ProposerExchanges")
+  receivedExchanges SkillExchange[]   @relation("ReceiverExchanges")
+  notifications     Notification[]
+
+  @@index([neighborhoodId])
+  @@index([role])
+  @@index([isProvider])
+}
+
+model ProviderProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  headline        String?
+  yearsExperience Int      @default(0)
+  serviceRadiusKm Float    @default(5.0)
+  trustScore      Float    @default(0) // cached 0-100
+  trustBreakdown  Json?    // weighted factors breakdown
+  completionRate  Float    @default(0)
+  avgResponseMins Float    @default(0)
+  onTimeRate      Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([trustScore])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  icon      String?
+  keywords  String[] // Postgres array used by keyword & Jaccard matching
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  listings ServiceListing[]
+  requests ServiceRequest[]
+}
+
+model ServiceListing {
+  id            String      @id @default(cuid())
+  providerId    String
+  categoryId    String
+  title         String
+  description   String
+  pricingType   PricingType @default(FIXED)
+  price         Int         // integer paise (e.g. 50000 = ₹500)
+  acceptsBarter Boolean     @default(false)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  provider User     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+  bookings Booking[]
+
+  offeredInExchanges   SkillExchange[] @relation("OfferedListing")
+  requestedInExchanges SkillExchange[] @relation("RequestedListing")
+
+  @@index([providerId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model AvailabilitySlot {
+  id         String   @id @default(cuid())
+  providerId String
+  dayOfWeek  Int      // 0 (Sunday) to 6 (Saturday)
+  startTime  String   // "09:00"
+  endTime    String   // "17:00"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  provider User @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, dayOfWeek])
+}
+
+model ServiceRequest {
+  id               String         @id @default(cuid())
+  requesterId      String
+  neighborhoodId   String?
+  rawText          String
+  parsedCategoryId String?
+  urgency          RequestUrgency @default(NORMAL)
+  budgetMax        Int?           // integer paise
+  preferredTime    DateTime?
+  lat              Float?
+  lng              Float?
+  type             RequestType    @default(PAID)
+  status           RequestStatus  @default(OPEN)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  requester      User          @relation("RequesterRequests", fields: [requesterId], references: [id], onDelete: Cascade)
+  neighborhood   Neighborhood? @relation(fields: [neighborhoodId], references: [id])
+  parsedCategory Category?     @relation(fields: [parsedCategoryId], references: [id])
+  bookings       Booking[]
+
+  @@index([requesterId])
+  @@index([neighborhoodId])
+  @@index([status])
+  @@index([parsedCategoryId])
+}
+
+model Booking {
+  id            String             @id @default(cuid())
+  requestId     String?
+  listingId     String
+  requesterId   String
+  providerId    String
+  scheduledAt   DateTime
+  agreedPrice   Int                // integer paise
+  paymentMode   BookingPaymentMode @default(WALLET)
+  status        BookingStatus      @default(REQUESTED)
+  cancelReason  String?
+  completedAt   DateTime?
+  autoReleaseAt DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  serviceRequest ServiceRequest?    @relation(fields: [requestId], references: [id])
+  listing        ServiceListing    @relation(fields: [listingId], references: [id])
+  requester      User              @relation("RequesterBookings", fields: [requesterId], references: [id])
+  provider       User              @relation("ProviderBookings", fields: [providerId], references: [id])
+
+  events        BookingEvent[]
+  ledgerEntries LedgerEntry[]
+  review        Review?
+  dispute       Dispute?
+  conversation  Conversation?
+
+  @@index([requesterId])
+  @@index([providerId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([autoReleaseAt])
+}
+
+model BookingEvent {
+  id         String         @id @default(cuid())
+  bookingId  String
+  fromStatus BookingStatus?
+  toStatus   BookingStatus
+  actorId    String
+  note       String?
+  createdAt  DateTime       @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+model Wallet {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  balance     Int      @default(0) // integer paise
+  heldBalance Int      @default(0) // integer paise in escrow
+  credits     Int      @default(0) // community credits
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries LedgerEntry[]
+}
+
+model LedgerEntry {
+  id           String          @id @default(cuid())
+  walletId     String
+  bookingId    String?
+  type         LedgerEntryType
+  amount       Int             // integer paise or credits count
+  balanceAfter Int             // balance after operation
+  description  String?
+  createdAt    DateTime        @default(now())
+
+  wallet  Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id])
+
+  @@index([walletId])
+  @@index([bookingId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  bookingId   String   @unique
+  reviewerId  String
+  revieweeId  String
+  rating      Int      // 1 to 5
+  comment     String
+  isFlagged   Boolean  @default(false)
+  flagReasons String[] // rule-based flags (e.g. rapid completion, suspicious collusion)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  booking  Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  reviewer User    @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  reviewee User    @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+
+  @@index([reviewerId])
+  @@index([revieweeId])
+  @@index([isFlagged])
+}
+
+model Dispute {
+  id           String             @id @default(cuid())
+  bookingId    String             @unique
+  raisedById   String
+  reason       String
+  evidenceText String
+  status       DisputeStatus      @default(OPEN)
+  resolution   DisputeResolution?
+  splitPercent Int?               // e.g. 50 for 50/50 split
+  adminNote    String?
+  resolvedById String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  raisedBy   User    @relation("DisputesRaised", fields: [raisedById], references: [id])
+  resolvedBy User?   @relation("DisputesResolved", fields: [resolvedById], references: [id])
+
+  @@index([raisedById])
+  @@index([status])
+}
+
+model Conversation {
+  id              String   @id @default(cuid())
+  bookingId       String?  @unique
+  skillExchangeId String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  booking       Booking?       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  skillExchange SkillExchange? @relation(fields: [skillExchangeId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@index([bookingId])
+  @@index([skillExchangeId])
+}
+
+model Message {
+  id             String    @id @default(cuid())
+  conversationId String
+  senderId       String
+  body           String
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+model SkillExchange {
+  id                 String              @id @default(cuid())
+  proposerId         String
+  receiverId         String
+  offeredListingId   String
+  requestedListingId String
+  offeredHours       Float
+  requestedHours     Float
+  status             SkillExchangeStatus @default(PROPOSED)
+  proposerConfirmed  Boolean             @default(false)
+  receiverConfirmed  Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  proposer         User           @relation("ProposerExchanges", fields: [proposerId], references: [id])
+  receiver         User           @relation("ReceiverExchanges", fields: [receiverId], references: [id])
+  offeredListing   ServiceListing @relation("OfferedListing", fields: [offeredListingId], references: [id])
+  requestedListing ServiceListing @relation("RequestedListing", fields: [requestedListingId], references: [id])
+  conversation     Conversation?
+
+  @@index([proposerId])
+  @@index([receiverId])
+  @@index([status])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String    // BOOKING_UPDATE, MESSAGE, DISPUTE, EXCHANGE
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String   // e.g. "ESCROW_HOLD", "DISPUTE_RESOLVED", "ADMIN_VERIFY"
+  entityType String   // "Booking", "Wallet", "User", "Review"
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
