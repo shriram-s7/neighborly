@@ -48,6 +48,9 @@ export class BookingsService {
 
     const scheduledDate = new Date(dto.scheduledAt);
     const agreedPrice = listing.price;
+    // Request bodies are not validated at runtime, so apply the schema default here.
+    // The stored mode decides later refunds/releases, so the hold must use the same value.
+    const paymentMode = dto.paymentMode ?? BookingPaymentMode.WALLET;
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Create booking in REQUESTED state
@@ -59,13 +62,13 @@ export class BookingsService {
           providerId: listing.providerId,
           scheduledAt: scheduledDate,
           agreedPrice,
-          paymentMode: dto.paymentMode,
+          paymentMode,
           status: BookingStatus.REQUESTED,
         },
       });
 
       // 2. If WALLET payment with agreedPrice > 0, hold escrow immediately
-      if (dto.paymentMode === BookingPaymentMode.WALLET && agreedPrice > 0) {
+      if (paymentMode === BookingPaymentMode.WALLET && agreedPrice > 0) {
         await this.walletService.holdEscrowTx(tx, requesterId, booking.id, agreedPrice);
       }
 
@@ -92,7 +95,7 @@ export class BookingsService {
           action: 'BOOKING_CREATED',
           entityType: 'Booking',
           entityId: booking.id,
-          metadata: { agreedPrice, paymentMode: dto.paymentMode },
+          metadata: { agreedPrice, paymentMode },
         },
       });
 
