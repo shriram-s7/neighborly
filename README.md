@@ -206,12 +206,13 @@ Locally, Vite proxies `/api` and `/socket.io` to port 4000, so the web app needs
 pnpm test
 ```
 
-**6 suites, 19 tests**, including:
+**7 suites, 21 tests**, including:
 
 | Suite | Covers |
 |---|---|
 | `booking.state-machine.spec.ts` | Legal/illegal transitions and which roles may make them |
 | `matching.service.spec.ts` | Parser time windows ("tomorrow evening" → 17:00–21:00 IST) and the service-radius filter |
+| `bookings.service.spec.ts` | A booking without `paymentMode` defaults to WALLET and holds escrow; CREDITS bookings do not |
 | `roles.guard.spec.ts` | Admin-only routes allow admins, reject users, and the roles guard is not global |
 | `matching.engine.spec.ts` | Haversine distance and urgent vs normal weights |
 | `trust.score.spec.ts` | Bayesian rating behaviour and penalty clamping |
