@@ -22,3 +22,7 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# local documents and media (moved here during consolidation; not published)
+docs/_local/
+media/
