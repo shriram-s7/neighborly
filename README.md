@@ -2,7 +2,7 @@
 
 **A hyperlocal community services platform for Chennai neighbourhoods.** Residents describe what they need in plain words, get matched with nearby neighbours who can help, pay safely through escrow, chat in real time, and leave reviews that feed an explainable trust score. Admins resolve disputes, moderate suspicious reviews and see which services each neighbourhood is missing.
 
-### 🌐 [Live demo → neighborly-beige.vercel.app](https://neighborly-beige.vercel.app)  ·  [API docs (Swagger)](https://neighborly-api-33ge.onrender.com/api/docs)
+### 🌐 [Live demo → neighborly-beige.vercel.app](https://neighborly-beige.vercel.app)  ·  [API docs (Swagger)](https://neighborly-api-33ge.onrender.com/api/docs)  ·  [GitHub](https://github.com/shriram-s7/neighborly)
 
 | Role | Email | Password |
 |---|---|---|
@@ -26,6 +26,7 @@
 - [Deployment](#deployment)
 - [Project structure](#project-structure)
 - [Known limitations](#known-limitations)
+- [Credits and license](#credits-and-license)
 
 ---
 
@@ -281,3 +282,11 @@ Being upfront about what this version does **not** do:
 - **Request bodies are typed but not validated at runtime** — the shared Zod schemas are not yet wired into the API.
 - **Some demo analytics are seeded** — Porur pet-care demand is raised to at least 14 to showcase the service-gap view, and "median time to accept" is a fixed 18 minutes.
 - **Free hosting sleeps** — the first request after ~15 idle minutes takes up to a minute, and the auto-release cron only runs while the API is awake.
+
+---
+
+## Credits and license
+
+Built by S Shriram. `DEMO_SCRIPT.md` has a walkthrough script for presenting the demo.
+
+No license specified.
